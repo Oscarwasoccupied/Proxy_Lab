@@ -1,0 +1,22 @@
+# Temporary files
+*~
+._*
+core
+
+# Generated files
+*.o
+*.d
+*.gch
+*.tar
+/proxy
+
+# Python files
+__pycache__/
+*.py[cod]
+
+# Pxydrive files
+/logs
+/source_files
+/response_files
+/results.log
+/get_files

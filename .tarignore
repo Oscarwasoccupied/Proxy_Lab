@@ -1,0 +1,26 @@
+# This is a list of files that should be included in the Git repository,
+# but do not need to be included in the handin.tar file.
+
+# Pxydrive files
+tests
+pxy
+driver.sh
+proxy-ref
+
+# Miscellaneous handout files
+tiny
+README
+port-for-user.pl
+.gitignore
+.tarignore
+
+# Makefiles
+Makefile
+helper.mk
+.labname.mk
+
+# TPZ files
+keycheck.py
+
+# Version control
+.git
