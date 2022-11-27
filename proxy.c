@@ -1,3 +1,4 @@
+
 /*
  * Starter code for proxy lab.
  * Feel free to modify this code in whatever way you wish.
@@ -131,7 +132,6 @@ void doit(int fd) {
     rio_readinitb(&client_rio, fd);
     rio_readlineb(&client_rio, buf, MAXLINE);
     if (sscanf(buf, "%s %s %s", method, uri, version) < 3) {
-        // fprintf(stderr, "Bad request");
         clienterror(fd, method, "400", "Bad Request", "Error parsing request");
         return;
     };
@@ -158,7 +158,6 @@ void doit(int fd) {
     forward_header(http_header, server_hostname, server_path, server_port,
                    client_rio);
     rio_writen(clientfd, http_header, strlen(http_header));
-    /* receive from server and send to client */
     size_t n;
 
     while ((n = rio_readnb(&server_rio, buf, MAXLINE)) != 0) {
@@ -173,6 +172,14 @@ void sigpipt_handler(int sig) {
     return;
 }
 
+void *thread(void *vargp) {
+    pthread_detach(pthread_self());
+    int connfd = *(int *)vargp;
+    doit(connfd);
+    close(connfd);
+    return NULL;
+}
+
 /**
  * @brief main function
  * (Structrue reference from CSAPP Figure 11.29)
@@ -182,6 +189,7 @@ int main(int argc, char **argv) {
     char hostname[MAXLINE], port[MAXLINE];
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
+    pthread_t tid;
     /* Although the default action for a process
      * that receives SIGPIPE is to terminate,
      * your proxy should not terminate due to that signal. */
@@ -196,11 +204,12 @@ int main(int argc, char **argv) {
     while (1) {
         clientlen = sizeof(clientaddr);
         connfd = accept(listenfd, (SA *)&clientaddr, &clientlen);
+        int *fdpointer = malloc(sizeof(connfd));
+        *fdpointer = connfd;
         getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port,
                     MAXLINE, 0);
         sio_printf("Accepted connection from (%s, %s)\n", hostname, port);
-        doit(connfd);
-        close(connfd);
+        pthread_create(&tid, NULL, thread, fdpointer);
     }
     return 0;
 }
