@@ -169,6 +169,10 @@ void doit(int fd) {
     parser_free(parser);
 }
 
+void sigpipt_handler(int sig) {
+    return;
+}
+
 /**
  * @brief main function
  * (Structrue reference from CSAPP Figure 11.29)
@@ -178,6 +182,10 @@ int main(int argc, char **argv) {
     char hostname[MAXLINE], port[MAXLINE];
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
+    /* Although the default action for a process
+     * that receives SIGPIPE is to terminate,
+     * your proxy should not terminate due to that signal. */
+    Signal(SIGPIPE, sigpipt_handler);
     /* Check command-line args */
     if (argc != 2) {
         fprintf(stderr, "usage: %s <port>\n", argv[0]);
