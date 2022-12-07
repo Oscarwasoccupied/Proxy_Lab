@@ -1,9 +1,15 @@
-
-/*
- * Starter code for proxy lab.
- * Feel free to modify this code in whatever way you wish.
+/* A concurrent web proxy with cache. It accepts connections from clients,
+ * and parse request from client and send it to the server.
+ * It can create different threads to handle requests, and will store
+ * request response pair in cache, based on LRU.
+ *
+ * Author: Xianwei Zou
+ * Andrew ID: xianweiz
+ *
+ * Reference: CSAPP Chapter 10-12
  */
 /* Some useful includes to help you get started */
+#include "cache.h"
 #include "csapp.h"
 #include "http_parser.h"
 #include <assert.h>
@@ -49,14 +55,12 @@ static const char *END_OF_LINE = "\r\n";
 #define SERVLEN 8
 /* Typedef for convenience */
 typedef struct sockaddr SA;
-
 /* Function Declaration */
 void doit(int fd);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
                  char *longmsg);
 void forward_header(char *http_header, char *host, char *path, char *port,
                     rio_t client_rio);
-
 /**
  * @brief Display the error message for the client.
  * Reference from CSAPP Figure 11.31
@@ -91,9 +95,7 @@ void forward_header(char *http_header, char *host, char *path, char *port,
                     rio_t client_rio) {
     char request_header[MAXLINE], host_header[MAXLINE], user_header[MAXLINE],
         other_header[MAXLINE], buf[MAXLINE];
-
     sprintf(request_header, REQUESTLINE_HEADER, path);
-
     while (rio_readlineb(&client_rio, buf, MAXLINE) > 0) {
         int not_end = strcmp(buf, END_OF_LINE);
         if (not_end) {
@@ -114,14 +116,14 @@ void forward_header(char *http_header, char *host, char *path, char *port,
         }
     }
 }
-
 /**
  * @brief Core part of the proxy
- * Reference CSAPP Figure 11.30
+ * Reference CSAPP Figure 11.0
  *
  */
 void doit(int fd) {
-    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
+    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE],
+        cachebuf[MAX_OBJECT_SIZE];
     rio_t client_rio, server_rio;
     int clientfd;
     char *server_hostname;
@@ -135,13 +137,16 @@ void doit(int fd) {
         clienterror(fd, method, "400", "Bad Request", "Error parsing request");
         return;
     };
-
     if (strcasecmp(method, "GET")) {
         clienterror(fd, method, "501", "Not implemented",
                     "Proxy does not implement this method");
         return;
     }
-
+    // if the the content of uri is already in the cache
+    // send the body directly to clients, otherwise, cache
+    if (cache_check(fd, uri)) {
+        return;
+    }
     /* Parse request from URI */
     parser_t *parser;
     parser = parser_new();
@@ -149,7 +154,6 @@ void doit(int fd) {
     parser_retrieve(parser, HOST, (const char **)&server_hostname);
     parser_retrieve(parser, PATH, (const char **)&server_path);
     parser_retrieve(parser, PORT, (const char **)&server_port);
-
     clientfd = open_clientfd(server_hostname, server_port);
     if (clientfd < 0) {
         return;
@@ -159,19 +163,32 @@ void doit(int fd) {
                    client_rio);
     rio_writen(clientfd, http_header, strlen(http_header));
     size_t n;
-
+    size_t totalsize_cache = 0;
     while ((n = rio_readnb(&server_rio, buf, MAXLINE)) != 0) {
         rio_writen(fd, buf, n);
+        if (totalsize_cache + n <= MAX_OBJECT_SIZE) {
+            memcpy(cachebuf + totalsize_cache, buf, n);
+        }
+        totalsize_cache += n;
     }
-
+    /* cache */
+    if (totalsize_cache <= MAX_OBJECT_SIZE) {
+        cache_insert(uri, cachebuf, totalsize_cache);
+    }
     close(clientfd);
     parser_free(parser);
 }
-
+/**
+ * @brief Ignore SIGPIPE signal
+ *
+ */
 void sigpipt_handler(int sig) {
     return;
 }
-
+/**
+ * @brief Define a single thread.
+ *
+ */
 void *thread(void *vargp) {
     pthread_detach(pthread_self());
     int connfd = *(int *)vargp;
@@ -179,7 +196,6 @@ void *thread(void *vargp) {
     close(connfd);
     return NULL;
 }
-
 /**
  * @brief main function
  * (Structrue reference from CSAPP Figure 11.29)
@@ -200,7 +216,8 @@ int main(int argc, char **argv) {
         exit(1);
     }
     listenfd = open_listenfd(argv[1]);
-
+    // initial cache
+    cache_init();
     while (1) {
         clientlen = sizeof(clientaddr);
         connfd = accept(listenfd, (SA *)&clientaddr, &clientlen);
